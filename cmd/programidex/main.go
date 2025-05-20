@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+const programidexDir = ".programidex"
+const configFile = "init_config.json"
+const logFile = "init.log"
+
 type Blueprint struct {
 	Type        string   `json:"type"` // "app" or "module"
 	WithModules bool     `json:"with_modules"`
@@ -20,26 +24,82 @@ type Blueprint struct {
 	GoModule    string   `json:"go_module"`
 }
 
-const programidexDir = ".programidex"
-const configFile = "init_config.json"
-const logFile = "init.log"
+func main() {
+	reader := bufio.NewReader(os.Stdin)
+	os.MkdirAll(programidexDir, 0755)
+	configPath := filepath.Join(programidexDir, configFile)
 
-func getCurrentDirName() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
+	var blueprint Blueprint
+	var githubRepo string
+
+	// Load existing config if present
+	if fileExists(configPath) {
+		blueprint = loadBlueprint(configPath)
+		for {
+			fmt.Println("\nPortfoliDEX Project Detected.")
+			fmt.Println("1. Install a new module into the DEX")
+			fmt.Println("2. View current config")
+			fmt.Println("3. Exit")
+			fmt.Print("Choose an option [1-3]: ")
+			choice, _ := reader.ReadString('\n')
+			choice = strings.TrimSpace(choice)
+			switch choice {
+			case "1":
+				handleModuleBlueprintInstall(reader)
+				// Optionally reload config if you want to show updated config after install
+				blueprint = loadBlueprint(configPath)
+			case "2":
+				configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
+				fmt.Println("\nCurrent config:")
+				fmt.Println(string(configBytes))
+			case "3":
+				fmt.Println("Exiting.")
+				return
+			default:
+				fmt.Println("Invalid choice.")
+			}
+		}
+		return
 	}
-	return filepath.Base(wd)
+
+	fmt.Println("Initialize a new Go project with programidex.")
+	projectType := promptProjectType(reader)
+	githubRepo = setupGitHub(reader)
+	goModule := promptGoModule(reader, projectType)
+
+	blueprint = buildBlueprint(projectType, githubRepo, goModule, reader)
+	blueprint.Directories = append(blueprint.Directories, ".programidex/")
+
+	// --- New: Ask to install a module blueprint if app supports modules ---
+	if blueprint.Type == "app" && blueprint.WithModules {
+		fmt.Print("\nWould you like to install a module blueprint now? (y/n): ")
+		resp, _ := reader.ReadString('\n')
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(resp)), "y") {
+			handleModuleBlueprintInstall(reader)
+		}
+	}
+
+	configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
+	fmt.Println("\nProposed configuration:")
+	fmt.Println(string(configBytes))
+	fmt.Print("\nProceed with directory creation and Go initialization? (y/n): ")
+	confirm, _ := reader.ReadString('\n')
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(confirm)), "y") {
+		fmt.Println("Aborted.")
+		appendLog("User aborted initialization.")
+		return
+	}
+
+	createDirectories(blueprint.Directories)
+	initializeGoModule(blueprint.GoModule)
+	ensureMainGoForApp(&blueprint)
+	_ = os.WriteFile(configPath, configBytes, 0644)
+	appendLog("Saved configuration.")
+
+	fmt.Println("\nInitialization complete. Config and log saved in .programidex/")
 }
 
-func getGitRemoteURL() (string, error) {
-	cmd := exec.Command("git", "remote", "get-url", "origin")
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
+// --- Utility and workflow functions ---
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
@@ -56,64 +116,58 @@ func appendLog(msg string) {
 	}
 }
 
-func main() {
-	reader := bufio.NewReader(os.Stdin)
-	os.MkdirAll(programidexDir, 0755)
-	configPath := filepath.Join(programidexDir, configFile)
-
+func loadBlueprint(configPath string) Blueprint {
 	var blueprint Blueprint
-	var githubRepo string
-
-	// Check for existing config
-	if fileExists(configPath) {
-		data, err := os.ReadFile(configPath)
-		if err == nil {
-			json.Unmarshal(data, &blueprint)
-		}
-		fmt.Println("This project has already been initialized by programidex.")
-		if blueprint.GitHubRepo == "" {
-			fmt.Println("GitHub namespace/repo is missing.")
-			fmt.Println("Would you like to set up GitHub now? (y/n): ")
-			resp, _ := reader.ReadString('\n')
-			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(resp)), "y") {
-				// Move GitHub setup logic here
-				githubRepo = setupGitHub(reader)
-				blueprint.GitHubRepo = githubRepo
-				// Save updated config and log
-				configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
-				_ = os.WriteFile(configPath, configBytes, 0644)
-				appendLog("GitHub repo set after re-initialization.")
-				fmt.Println("GitHub repo set. Exiting.")
-				return
-			} else {
-				fmt.Println("You can set up GitHub later. Exiting.")
-				appendLog("Skipped GitHub setup on re-initialization.")
-				return
-			}
-		} else {
-			fmt.Println("Nothing to update. Exiting.")
-			appendLog("Attempted re-initialization; nothing to update.")
-			return
-		}
+	data, err := os.ReadFile(configPath)
+	if err == nil {
+		json.Unmarshal(data, &blueprint)
 	}
+	return blueprint
+}
 
-	fmt.Println("Initialize a new Go project with programidex.")
+func handleExistingProject(blueprint *Blueprint, reader *bufio.Reader, configPath string) {
+	fmt.Println("This project has already been initialized by programidex.")
+	if blueprint.GitHubRepo == "" {
+		fmt.Println("GitHub namespace/repo is missing.")
+		fmt.Println("Would you like to set up GitHub now? (y/n): ")
+		resp, _ := reader.ReadString('\n')
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(resp)), "y") {
+			blueprint.GitHubRepo = setupGitHub(reader)
+			configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
+			_ = os.WriteFile(configPath, configBytes, 0644)
+			appendLog("GitHub repo set after re-initialization.")
+			fmt.Println("GitHub repo set.")
+		} else {
+			fmt.Println("You can set up GitHub later.")
+			appendLog("Skipped GitHub setup on re-initialization.")
+		}
+	} else {
+		fmt.Println("Nothing to update in config, but checking for missing directories or files...")
+		appendLog("Attempted re-initialization; checking for missing directories or files.")
+	}
+	ensureMainGoForApp(blueprint)
+	fmt.Println("Repair (if needed) complete. Exiting.")
+}
+
+func promptProjectType(reader *bufio.Reader) string {
 	fmt.Print("Are you initializing an 'app' or a 'module'? ")
 	projectType, _ := reader.ReadString('\n')
-	projectType = strings.TrimSpace(strings.ToLower(projectType))
+	return strings.TrimSpace(strings.ToLower(projectType))
+}
 
-	githubRepo = setupGitHub(reader)
-
-	var goModule string
+func promptGoModule(reader *bufio.Reader, projectType string) string {
 	if projectType == "app" || projectType == "module" {
 		fmt.Print("Enter the Go module path (e.g., github.com/youruser/yourrepo): ")
-		goModule, _ = reader.ReadString('\n')
-		goModule = strings.TrimSpace(goModule)
+		goModule, _ := reader.ReadString('\n')
+		return strings.TrimSpace(goModule)
 	}
+	return ""
+}
 
+func buildBlueprint(projectType, githubRepo, goModule string, reader *bufio.Reader) Blueprint {
 	switch projectType {
 	case "app":
-		blueprint = Blueprint{
+		blueprint := Blueprint{
 			Type:        "app",
 			WithHugo:    true,
 			Directories: []string{"cmd/", "internal/", "docs/", "hugo/"},
@@ -126,11 +180,12 @@ func main() {
 		if blueprint.WithModules {
 			blueprint.Directories = append(blueprint.Directories, "modules/")
 		}
+		return blueprint
 	case "module":
 		fmt.Print("Enter the module name: ")
 		modName, _ := reader.ReadString('\n')
 		modName = strings.TrimSpace(modName)
-		blueprint = Blueprint{
+		return Blueprint{
 			Type:        "module",
 			WithHugo:    true,
 			Directories: []string{modName + "/", "docs/", "hugo/"},
@@ -140,26 +195,13 @@ func main() {
 	default:
 		fmt.Println("Invalid type. Please enter 'app' or 'module'.")
 		appendLog("Invalid project type entered.")
-		return
+		os.Exit(1)
 	}
+	return Blueprint{}
+}
 
-	// Always add .programidex for logs/config
-	blueprint.Directories = append(blueprint.Directories, ".programidex/")
-
-	// Display config
-	configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
-	fmt.Println("\nProposed configuration:")
-	fmt.Println(string(configBytes))
-	fmt.Print("\nProceed with directory creation and Go initialization? (y/n): ")
-	confirm, _ := reader.ReadString('\n')
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(confirm)), "y") {
-		fmt.Println("Aborted.")
-		appendLog("User aborted initialization.")
-		return
-	}
-
-	// Create directories
-	for _, dir := range blueprint.Directories {
+func createDirectories(dirs []string) {
+	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			fmt.Printf("Failed to create %s: %v\n", dir, err)
 			appendLog(fmt.Sprintf("Failed to create %s: %v", dir, err))
@@ -168,10 +210,11 @@ func main() {
 			appendLog(fmt.Sprintf("Created %s", dir))
 		}
 	}
+}
 
-	// Initialize Go module if not already done
-	if !fileExists("go.mod") && blueprint.GoModule != "" {
-		cmd := exec.Command("go", "mod", "init", blueprint.GoModule)
+func initializeGoModule(goModule string) {
+	if !fileExists("go.mod") && goModule != "" {
+		cmd := exec.Command("go", "mod", "init", goModule)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
@@ -182,12 +225,43 @@ func main() {
 			appendLog("Initialized go.mod")
 		}
 	}
+}
 
-	// Save config and log
-	_ = os.WriteFile(configPath, configBytes, 0644)
-	appendLog("Saved configuration.")
+func ensureMainGoForApp(blueprint *Blueprint) {
+	if blueprint.Type != "app" {
+		return
+	}
+	folderName := getCurrentDirName()
+	if blueprint.GoModule != "" {
+		parts := strings.Split(blueprint.GoModule, "/")
+		folderName = parts[len(parts)-1]
+	}
+	mainDir := filepath.Join("cmd", folderName)
+	mainPath := filepath.Join(mainDir, "main.go")
+	needsMain := false
+	if !fileExists(mainDir) {
+		if err := os.MkdirAll(mainDir, 0755); err == nil {
+			fmt.Printf("Created missing directory: %s\n", mainDir)
+			appendLog(fmt.Sprintf("Created missing directory: %s", mainDir))
+			needsMain = true
+		}
+	}
+	if !fileExists(mainPath) {
+		needsMain = true
+	}
+	if needsMain {
+		mainContent := `package main
 
-	fmt.Println("\nInitialization complete. Config and log saved in .programidex/")
+import "fmt"
+
+func main() {
+    fmt.Println("Welcome to ` + folderName + `!")
+}
+`
+		_ = os.WriteFile(mainPath, []byte(mainContent), 0644)
+		fmt.Printf("Created starter Go file: %s\n", mainPath)
+		appendLog(fmt.Sprintf("Created starter Go file: %s", mainPath))
+	}
 }
 
 // Helper function for GitHub setup
@@ -212,4 +286,26 @@ func setupGitHub(reader *bufio.Reader) string {
 		githubRepo, _ := reader.ReadString('\n')
 		return strings.TrimSpace(githubRepo)
 	}
+}
+
+func getCurrentDirName() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	return filepath.Base(wd)
+}
+
+func getGitRemoteURL() (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func handleModuleBlueprintInstall(reader *bufio.Reader) {
+	fmt.Println("Installing module blueprint...")
+	// Add your module blueprint installation logic here
 }
