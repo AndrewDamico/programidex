@@ -1,0 +1,20 @@
+# <go>
+/bin/
+/obj/
+*.exe
+*.test
+*.out
+*.log
+coverage.*
+# </go>
+
+# <hugo>
+/public/
+/resources/_gen/
+/hugo_stats.json
+# </hugo>
+
+# <node>
+/node_modules/
+dist/
+# </node>

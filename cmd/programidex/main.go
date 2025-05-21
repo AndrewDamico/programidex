@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -231,4 +232,43 @@ func main() {
 		fmt.Printf("Created starter Go file: %s\n", mainPath)
 		appendLog("programidex", fmt.Sprintf("Created starter Go file: %s", mainPath))
 	}
+}
+
+// Call this after initialization or when adding features like Hugo
+func generateGitignoreFromTemplate(config Blueprint) error {
+	templatePath := filepath.Join("cmd", "programidex", "templates", ".gitignore.template")
+	outputPath := ".gitignore"
+
+	sections := map[string]bool{
+		"go":   true, // always include Go
+		"hugo": config.WithHugo,
+		// add more as needed
+	}
+
+	tmpl, err := os.ReadFile(templatePath)
+	if err != nil {
+		return err
+	}
+
+	var out bytes.Buffer
+	scanner := bufio.NewScanner(bytes.NewReader(tmpl))
+	include := false
+	section := ""
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "# <") && strings.HasSuffix(line, ">") {
+			section = strings.TrimSuffix(strings.TrimPrefix(line, "# <"), ">")
+			include = sections[section]
+			continue
+		}
+		if strings.HasPrefix(line, "# </") && strings.HasSuffix(line, ">") {
+			section = ""
+			include = false
+			continue
+		}
+		if include || section == "" {
+			out.WriteString(line + "\n")
+		}
+	}
+	return os.WriteFile(outputPath, out.Bytes(), 0644)
 }
