@@ -1,0 +1,8 @@
+{
+  "name": "programidex",
+  "type": "app",
+  "owner": "AndrewDamico",
+  "description": "Programidex is a Go-powered project initializer and management tool designed for modular DEX (Developer Experience) ecosystems. It streamlines the setup of new Go applications and modules, scaffolds recommended directory structures, manages configuration and logging, and supports easy integration of reusable modules. With built-in support for GitHub and Portfolidex, programidex helps you quickly bootstrap, organize, and maintain scalable, modern Go projects.",
+  "dex_modules": null,
+  "repo": "https://github.com/AndrewDamico/programidex.git"
+}

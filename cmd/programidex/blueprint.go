@@ -57,13 +57,11 @@ func buildBlueprint(projectType, githubRepo, goModule string, reader *bufio.Read
 		}
 	default:
 		fmt.Println("Invalid type. Please enter 'app' or 'module'.")
-		appendLog("Invalid project type entered.")
 		os.Exit(1)
 	}
 	return Blueprint{}
 }
 
-// handleModuleBlueprintInstall prompts for module name and installs the blueprint
 func handleModuleBlueprintInstall(reader *bufio.Reader) {
 	rootName := getCurrentDirName()
 	defaultModuleName := rootName + "-module"
@@ -100,22 +98,21 @@ func handleModuleBlueprintInstall(reader *bufio.Reader) {
 	confirm, _ := reader.ReadString('\n')
 	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(confirm)), "y") {
 		fmt.Println("Aborted module creation.")
-		appendLog("User aborted module blueprint creation.")
+		appendLog("programidex", "User aborted module blueprint creation.")
 		return
 	}
 
 	err := installModuleBlueprint(moduleName)
 	if err != nil {
 		fmt.Printf("Failed to install module blueprint: %v\n", err)
-		appendLog(fmt.Sprintf("Failed to install module blueprint: %v", err))
+		appendLog("programidex", fmt.Sprintf("Failed to install module blueprint: %v", err))
 	} else {
 		fmt.Printf("Module blueprint '%s' installed.\n", moduleName)
-		appendLog(fmt.Sprintf("Module blueprint '%s' installed.", moduleName))
+		appendLog("programidex", fmt.Sprintf("Module blueprint '%s' installed.", moduleName))
 		updateConfigWithModule(moduleName)
 	}
 }
 
-// installModuleBlueprint creates a basic module folder and starter files.
 func installModuleBlueprint(moduleName string) error {
 	moduleDir := filepath.Join("modules", moduleName)
 	if err := os.MkdirAll(moduleDir, 0755); err != nil {
@@ -145,9 +142,8 @@ func main() {
 	return nil
 }
 
-// Add this helper to blueprint.go
 func updateConfigWithModule(moduleName string) {
-	configPath := filepath.Join(programidexDir, configFile)
+	configPath := filepath.Join(dexDir, programidexConfigFile)
 	blueprint := loadBlueprint(configPath)
 	moduleDir := filepath.Join("modules", moduleName)
 	if !contains(blueprint.Directories, moduleDir) {
@@ -155,7 +151,7 @@ func updateConfigWithModule(moduleName string) {
 	}
 	configBytes, _ := json.MarshalIndent(blueprint, "", "  ")
 	_ = os.WriteFile(configPath, configBytes, 0644)
-	appendLog(fmt.Sprintf("Config updated with new module: %s", moduleName))
+	appendLog("programidex", fmt.Sprintf("Config updated with new module: %s", moduleName))
 }
 
 func contains(slice []string, item string) bool {

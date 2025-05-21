@@ -1,0 +1,7 @@
+{
+  "name": "programidex-module",
+  "type": "module",
+  "owner": "AndrewDamico",
+  "description": "Programidex Module offers reusable scaffolding and initialization logic for DEX projects. It helps automate the creation of recommended directory structures, configuration files, and module registration, making it easy to bootstrap and manage new Go-based DEX apps and modules.",
+  "repo": "https://github.com/AndrewDamico/programidex.git"
+}

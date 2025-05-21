@@ -1,0 +1,15 @@
+{
+  "type": "app",
+  "with_modules": true,
+  "with_hugo": true,
+  "directories": [
+    "cmd/",
+    "internal/",
+    "docs/",
+    "hugo/",
+    "modules/",
+    ".programidex/"
+  ],
+  "github_repo": "https://github.com/AndrewDamico/programidex.git",
+  "go_module": "github.com/AndrewDamico/programidex"
+}
